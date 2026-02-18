@@ -1,310 +1,279 @@
 """
-AI Code Guardian - Performance Monitor
-مراقب الأداء الذكي للبوت
+Performance Monitor - مراقب الأداء
+مراقبة مستمرة لمؤشرات الأداء الرئيسية (KPIs)
 """
 
 import asyncio
 import statistics
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
-from dataclasses import dataclass
-from enum import Enum
-import aiohttp
+from typing import List, Dict, Optional, Callable
 from collections import deque
-import json
+import logging
 
-class AlertLevel(Enum):
-    INFO = "info"
-    WARNING = "warning"
-    CRITICAL = "critical"
+from sqlalchemy.orm import Session
+from .models import (
+    PerformanceMetric, Alert, AlertSeverity, 
+    PerformanceMetricDB, AlertDB
+)
 
-@dataclass
-class MetricSnapshot:
-    timestamp: datetime
-    win_rate: float
-    profit_factor: float
-    sharpe_ratio: float
-    max_drawdown: float
-    expectancy: float
-    latency_ms: float
-    total_trades: int
-    winning_trades: int
-    losing_trades: int
-
-@dataclass
-class Alert:
-    id: str
-    level: AlertLevel
-    metric_name: str
-    current_value: float
-    threshold: float
-    deviation_percent: float
-    timestamp: datetime
-    message: str
-    suggested_action: str
+logger = logging.getLogger(__name__)
 
 class PerformanceMonitor:
     """
-    مراقب الأداء المستمر للبوت التداولي
+    مراقب الأداء الذكي - يجمع المقاييس ويكتشف الانحرافات
     """
     
-    # Thresholds
-    WIN_RATE_THRESHOLD = 0.55
-    PROFIT_FACTOR_THRESHOLD = 1.5
-    SHARPE_RATIO_THRESHOLD = 1.0
-    MAX_DRAWDOWN_THRESHOLD = 0.15
-    EXPECTANCY_THRESHOLD = 0.0
-    LATENCY_THRESHOLD_MS = 100
+    # thresholds - الحدود الحرجة
+    THRESHOLDS = {
+        'win_rate': {'min': 0.55, 'target': 0.65},
+        'profit_factor': {'min': 1.5, 'target': 2.0},
+        'sharpe_ratio': {'min': 1.0, 'target': 1.5},
+        'max_drawdown': {'max': -0.15, 'target': -0.10},
+        'expectancy': {'min': 0.0, 'target': 0.02},
+        'latency_ms': {'max': 100, 'target': 50}
+    }
     
-    # Deviation threshold for alerts
-    DEVIATION_THRESHOLD = 0.10
-    
-    def __init__(self, db_connection=None, notification_service=None):
-        self.db = db_connection
-        self.notifier = notification_service
-        self.metrics_history: deque = deque(maxlen=10000)  # ~35 days of 5-min intervals
-        self.alerts: List[Alert] = []
+    def __init__(self, db_session: Session, check_interval: int = 300):
+        """
+        Args:
+            db_session: جلسة قاعدة البيانات
+            check_interval: الفاصل الزمني للفحص بالثواني (افتراضي 5 دقائق)
+        """
+        self.db = db_session
+        self.check_interval = check_interval
         self.is_running = False
-        self.moving_averages = {
-            'win_rate': deque(maxlen=288),  # 24 hours
-            'profit_factor': deque(maxlen=288),
-            'sharpe_ratio': deque(maxlen=288),
-            'max_drawdown': deque(maxlen=288),
-            'expectancy': deque(maxlen=288),
-            'latency_ms': deque(maxlen=288)
+        self._task: Optional[asyncio.Task] = None
+        
+        # تخزين آخر 100 قياس للمتوسطات المتحركة
+        self._metrics_history: Dict[str, deque] = {
+            'win_rate': deque(maxlen=100),
+            'profit_factor': deque(maxlen=100),
+            'sharpe_ratio': deque(maxlen=100),
+            'max_drawdown': deque(maxlen=100),
+            'expectancy': deque(maxlen=100),
+            'latency_ms': deque(maxlen=100)
         }
         
-    async def start_monitoring(self):
+        # قائمة المستمعين للتنبيهات
+        self._alert_handlers: List[Callable] = []
+        
+    def register_alert_handler(self, handler: Callable):
+        """تسجيل دالة معالجة للتنبيهات"""
+        self._alert_handlers.append(handler)
+        
+    async def start(self):
         """بدء المراقبة المستمرة"""
+        if self.is_running:
+            logger.warning("المonitor يعمل بالفعل")
+            return
+            
         self.is_running = True
+        self._task = asyncio.create_task(self._monitoring_loop())
+        logger.info("✅ تم بدء مراقب الأداء")
+        
+    async def stop(self):
+        """إيقاف المراقبة"""
+        self.is_running = False
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        logger.info("🛑 تم إيقاف مراقب الأداء")
+        
+    async def _monitoring_loop(self):
+        """الحلقة الرئيسية للمراقبة"""
         while self.is_running:
             try:
                 await self.collect_metrics()
                 await self.detect_anomalies()
-                await asyncio.sleep(300)  # كل 5 دقائق
+                await asyncio.sleep(self.check_interval)
             except Exception as e:
-                print(f"Monitor error: {e}")
-                await asyncio.sleep(60)
-    
-    def stop_monitoring(self):
-        """إيقاف المراقبة"""
-        self.is_running = False
-    
-    async def collect_metrics(self) -> MetricSnapshot:
-        """جمع المقاييس من البوت"""
-        # في الواقع: استدعاء API الداخلي للبوت
-        metrics = await self._fetch_bot_metrics()
+                logger.error(f"خطأ في حلقة المراقبة: {e}")
+                await asyncio.sleep(60)  # انتظر دقيقة قبل إعادة المحاولة
+                
+    async def collect_metrics(self) -> PerformanceMetric:
+        """
+        جمع المقاييس من أنظمة التداول
+        في الإنتاج، هذا يجب أن يقرأ من قاعدة بيانات التداول
+        """
+        # TODO: استبدل هذا بالاستعلام الفعلي من نظام التداول
+        metrics = await self._fetch_trading_metrics()
         
-        snapshot = MetricSnapshot(
-            timestamp=datetime.utcnow(),
-            win_rate=metrics.get('win_rate', 0),
-            profit_factor=metrics.get('profit_factor', 0),
-            sharpe_ratio=metrics.get('sharpe_ratio', 0),
-            max_drawdown=metrics.get('max_drawdown', 0),
-            expectancy=metrics.get('expectancy', 0),
-            latency_ms=metrics.get('latency_ms', 0),
-            total_trades=metrics.get('total_trades', 0),
-            winning_trades=metrics.get('winning_trades', 0),
-            losing_trades=metrics.get('losing_trades', 0)
+        # حفظ في التاريخ
+        for key, value in metrics.dict().items():
+            if key in self._metrics_history and isinstance(value, (int, float)):
+                self._metrics_history[key].append(value)
+                
+        # حفظ في قاعدة البيانات
+        db_metric = PerformanceMetricDB(**metrics.dict())
+        self.db.add(db_metric)
+        self.db.commit()
+        
+        logger.debug(f"📊 تم جمع المقاييس: Win Rate={metrics.win_rate:.2%}")
+        return metrics
+        
+    async def _fetch_trading_metrics(self) -> PerformanceMetric:
+        """
+        جلب المقاييس من نظام التداول الفعلي
+        """
+        # TODO: ربط هذا بنظام التداول الحقيقي
+        # مثال مؤقت:
+        return PerformanceMetric(
+            win_rate=0.58,
+            profit_factor=1.8,
+            sharpe_ratio=1.2,
+            max_drawdown=-0.12,
+            expectancy=0.015,
+            latency_ms=45,
+            total_trades=150,
+            successful_trades=87
         )
         
-        self.metrics_history.append(snapshot)
-        
-        # تحديث المتوسطات المتحركة
-        self.moving_averages['win_rate'].append(snapshot.win_rate)
-        self.moving_averages['profit_factor'].append(snapshot.profit_factor)
-        self.moving_averages['sharpe_ratio'].append(snapshot.sharpe_ratio)
-        self.moving_averages['max_drawdown'].append(snapshot.max_drawdown)
-        self.moving_averages['expectancy'].append(snapshot.expectancy)
-        self.moving_averages['latency_ms'].append(snapshot.latency_ms)
-        
-        # حفظ في قاعدة البيانات
-        await self._save_to_db(snapshot)
-        
-        return snapshot
-    
-    async def _fetch_bot_metrics(self) -> Dict[str, float]:
-        """جلب المقاييس من البوت الفعلي"""
-        # TODO: ربط مع Trading Core API
-        return {
-            'win_rate': 0.58,
-            'profit_factor': 1.8,
-            'sharpe_ratio': 1.2,
-            'max_drawdown': 0.12,
-            'expectancy': 0.05,
-            'latency_ms': 85,
-            'total_trades': 150,
-            'winning_trades': 87,
-            'losing_trades': 63
-        }
-    
     async def detect_anomalies(self) -> List[Alert]:
-        """اكتشاف الانحرافات عن المعدل الطبيعي"""
-        if len(self.metrics_history) < 288:  # نحتاج 24 ساعة على الأقل
-            return []
-        
-        current = self.metrics_history[-1]
+        """
+        اكتشاف الانحرافات عن المعدلات الطبيعية
+        """
         alerts = []
         
-        # فحص كل مقياس
-        checks = [
-            ('win_rate', current.win_rate, self.WIN_RATE_THRESHOLD, '>', 
-             f"انخفاض نسبة الصفقات الرابحة إلى {current.win_rate:.1%}"),
-            ('profit_factor', current.profit_factor, self.PROFIT_FACTOR_THRESHOLD, '>',
-             f"انخفاض معامل الربح إلى {current.profit_factor:.2f}"),
-            ('sharpe_ratio', current.sharpe_ratio, self.SHARPE_RATIO_THRESHOLD, '>',
-             f"انخفاض نسبة شارب إلى {current.sharpe_ratio:.2f}"),
-            ('max_drawdown', current.max_drawdown, self.MAX_DRAWDOWN_THRESHOLD, '<',
-             f"ارتفاع التراجع الأقصى إلى {current.max_drawdown:.1%}"),
-            ('latency_ms', current.latency_ms, self.LATENCY_THRESHOLD_MS, '<',
-             f"ارتفاع التأخر إلى {current.latency_ms}ms")
-        ]
+        # جلب آخر مقياس
+        latest = self.db.query(PerformanceMetricDB).order_by(
+            PerformanceMetricDB.timestamp.desc()
+        ).first()
         
-        for metric_name, current_val, threshold, direction, msg in checks:
-            # حساب المتوسط المتحرك
-            ma_values = list(self.moving_averages[metric_name])
-            if len(ma_values) < 12:  # ساعة واحدة على الأقل
+        if not latest:
+            return alerts
+            
+        # فحص كل مؤشر
+        for metric_name, thresholds in self.THRESHOLDS.items():
+            current_value = getattr(latest, metric_name, None)
+            if current_value is None:
                 continue
-            
-            ma_avg = statistics.mean(ma_values[:-1])  # exclude current
-            if ma_avg == 0:
-                continue
-            
-            deviation = abs(current_val - ma_avg) / ma_avg
-            
-            if deviation > self.DEVIATION_THRESHOLD:
-                # تحديد مستوى الخطورة
-                level = AlertLevel.WARNING if deviation < 0.20 else AlertLevel.CRITICAL
                 
-                # التحقق من تجاوز العتبة
-                threshold_breached = False
-                if direction == '>' and current_val < threshold:
-                    threshold_breached = True
-                elif direction == '<' and current_val > threshold:
-                    threshold_breached = True
+            # فحص الحدود المطلقة
+            if 'min' in thresholds and current_value < thresholds['min']:
+                deviation = (thresholds['min'] - current_value) / thresholds['min']
+                alert = await self._create_alert(
+                    metric_name=metric_name,
+                    current_value=current_value,
+                    threshold_value=thresholds['min'],
+                    severity=self._calculate_severity(deviation),
+                    message=f"انخفاض {metric_name}: {current_value:.3f} (الحد الأدنى: {thresholds['min']})"
+                )
+                alerts.append(alert)
                 
-                if threshold_breached or deviation > 0.15:
-                    alert = Alert(
-                        id=f"{metric_name}_{int(datetime.utcnow().timestamp())}",
-                        level=level,
-                        metric_name=metric_name,
-                        current_value=current_val,
-                        threshold=threshold,
-                        deviation_percent=deviation * 100,
-                        timestamp=datetime.utcnow(),
-                        message=msg,
-                        suggested_action=self._get_suggested_action(metric_name, current_val)
-                    )
-                    alerts.append(alert)
-                    await self.send_alert(alert)
-        
-        self.alerts.extend(alerts)
+            if 'max' in thresholds and current_value > thresholds['max']:
+                deviation = (current_value - thresholds['max']) / abs(thresholds['max'])
+                alert = await self._create_alert(
+                    metric_name=metric_name,
+                    current_value=current_value,
+                    threshold_value=thresholds['max'],
+                    severity=self._calculate_severity(deviation),
+                    message=f"ارتفاع {metric_name}: {current_value:.3f} (الحد الأقصى: {thresholds['max']})"
+                )
+                alerts.append(alert)
+                
+            # فحص الانحراف عن المتوسط المتحرك (10%)
+            if len(self._metrics_history[metric_name]) >= 20:
+                moving_avg = statistics.mean(list(self._metrics_history[metric_name])[-20:])
+                if moving_avg != 0:
+                    deviation_pct = abs(current_value - moving_avg) / abs(moving_avg)
+                    if deviation_pct > 0.10:
+                        alert = await self._create_alert(
+                            metric_name=f"{metric_name}_deviation",
+                            current_value=current_value,
+                            threshold_value=moving_avg,
+                            severity=AlertSeverity.MEDIUM if deviation_pct < 0.20 else AlertSeverity.HIGH,
+                            message=f"انحراف كبير في {metric_name}: {deviation_pct:.1%} عن المتوسط"
+                        )
+                        alerts.append(alert)
+                        
+        # إرسال التنبيهات للمستمعين
+        for alert in alerts:
+            await self._notify_handlers(alert)
+            
         return alerts
-    
-    def _get_suggested_action(self, metric_name: str, value: float) -> str:
-        """الحصول على الإجراء المقترح بناءً على المقياس"""
-        actions = {
-            'win_rate': 'مراجعة منطق الدخول والخروج، فحص شروط الاستراتيجية',
-            'profit_factor': 'تعديل نسب المخاطرة/العائد، مراجعة إدارة رأس المال',
-            'sharpe_ratio': 'تقليل التقلب، إضافة فلاتر للدخول',
-            'max_drawdown': 'تفعيل وقف الخسارة الأقصى، تقليل حجم المراكز',
-            'latency_ms': 'فحص اتصال الإنترنت، مراجعة VPS/الخادم'
-        }
-        return actions.get(metric_name, 'مراجعة عامة للنظام')
-    
+        
+    def _calculate_severity(self, deviation: float) -> AlertSeverity:
+        """حساب مستوى الخطورة بناءً على نسبة الانحراف"""
+        if deviation > 0.30:
+            return AlertSeverity.CRITICAL
+        elif deviation > 0.20:
+            return AlertSeverity.HIGH
+        elif deviation > 0.10:
+            return AlertSeverity.MEDIUM
+        return AlertSeverity.LOW
+        
+    async def _create_alert(
+        self, 
+        metric_name: str, 
+        current_value: float,
+        threshold_value: float,
+        severity: AlertSeverity,
+        message: str
+    ) -> Alert:
+        """إنشاء تنبيه جديد"""
+        # التحقق من عدم التكرار
+        existing = self.db.query(AlertDB).filter(
+            AlertDB.metric_name == metric_name,
+            AlertDB.is_resolved == False
+        ).first()
+        
+        if existing:
+            # تحديث القيمة الحالية
+            existing.current_value = current_value
+            self.db.commit()
+            return Alert.from_orm(existing)
+            
+        db_alert = AlertDB(
+            severity=severity,
+            metric_name=metric_name,
+            current_value=current_value,
+            threshold_value=threshold_value,
+            message=message
+        )
+        self.db.add(db_alert)
+        self.db.commit()
+        self.db.refresh(db_alert)
+        
+        logger.warning(f"🚨 تنبيه جديد [{severity.value}]: {message}")
+        return Alert.from_orm(db_alert)
+        
+    async def _notify_handlers(self, alert: Alert):
+        """إشعار جميع المعالجين المسجلين"""
+        for handler in self._alert_handlers:
+            try:
+                if asyncio.iscoroutinefunction(handler):
+                    await handler(alert)
+                else:
+                    handler(alert)
+            except Exception as e:
+                logger.error(f"خطأ في معالج التنبيه: {e}")
+                
     async def send_alert(self, alert: Alert):
-        """إرسال تنبيه"""
-        # حفظ في DB
-        await self._save_alert_to_db(alert)
+        """إرسال تنبيه يدوي"""
+        await self._notify_handlers(alert)
         
-        # إرسال إشعار
-        if self.notifier:
-            await self.notifier.send({
-                'type': 'guardian_alert',
-                'level': alert.level.value,
-                'message': alert.message,
-                'metric': alert.metric_name,
-                'value': alert.current_value,
-                'deviation': alert.deviation_percent,
-                'action': alert.suggested_action
-            })
+    def get_current_metrics(self) -> Optional[PerformanceMetric]:
+        """الحصول على آخر مقاييس"""
+        latest = self.db.query(PerformanceMetricDB).order_by(
+            PerformanceMetricDB.timestamp.desc()
+        ).first()
+        return PerformanceMetric.from_orm(latest) if latest else None
         
-        # طباعة للـ logs
-        print(f"[{alert.level.value.upper()}] {alert.message} "
-              f"(Deviation: {alert.deviation_percent:.1f}%)")
-    
-    async def get_current_status(self) -> Dict[str, Any]:
-        """الحصول على الحالة الحالية"""
-        if not self.metrics_history:
-            return {'status': 'initializing', 'message': 'جمع البيانات...'}
+    def get_active_alerts(self) -> List[Alert]:
+        """الحصول على التنبيهات النشطة"""
+        alerts = self.db.query(AlertDB).filter(
+            AlertDB.is_resolved == False
+        ).order_by(AlertDB.timestamp.desc()).all()
+        return [Alert.from_orm(a) for a in alerts]
         
-        current = self.metrics_history[-1]
-        recent_alerts = [a for a in self.alerts 
-                        if a.timestamp > datetime.utcnow() - timedelta(hours=24)]
-        
-        critical_count = sum(1 for a in recent_alerts if a.level == AlertLevel.CRITICAL)
-        
-        status = 'healthy'
-        if critical_count > 0:
-            status = 'critical'
-        elif len(recent_alerts) > 3:
-            status = 'warning'
-        
-        return {
-            'status': status,
-            'last_check': current.timestamp.isoformat(),
-            'metrics': {
-                'win_rate': current.win_rate,
-                'profit_factor': current.profit_factor,
-                'sharpe_ratio': current.sharpe_ratio,
-                'max_drawdown': current.max_drawdown,
-                'expectancy': current.expectancy,
-                'latency_ms': current.latency_ms
-            },
-            'alerts_24h': len(recent_alerts),
-            'critical_alerts': critical_count,
-            'total_trades': current.total_trades
-        }
-    
-    async def _save_to_db(self, snapshot: MetricSnapshot):
-        """حفظ المقاييس في قاعدة البيانات"""
-        if not self.db:
-            return
-        # TODO: Implement DB save
-    
-    async def _save_alert_to_db(self, alert: Alert):
-        """حفظ التنبيه في قاعدة البيانات"""
-        if not self.db:
-            return
-        # TODO: Implement DB save
-    
-    def get_metrics_report(self, hours: int = 24) -> Dict[str, Any]:
-        """تقرير المقاييس لفترة زمنية"""
-        cutoff = datetime.utcnow() - timedelta(hours=hours)
-        recent = [m for m in self.metrics_history if m.timestamp > cutoff]
-        
-        if not recent:
-            return {'error': 'لا توجد بيانات كافية'}
-        
-        return {
-            'period_hours': hours,
-            'data_points': len(recent),
-            'win_rate': {
-                'current': recent[-1].win_rate,
-                'avg': statistics.mean([m.win_rate for m in recent]),
-                'min': min([m.win_rate for m in recent]),
-                'max': max([m.win_rate for m in recent])
-            },
-            'profit_factor': {
-                'current': recent[-1].profit_factor,
-                'avg': statistics.mean([m.profit_factor for m in recent])
-            },
-            'sharpe_ratio': {
-                'current': recent[-1].sharpe_ratio,
-                'avg': statistics.mean([m.sharpe_ratio for m in recent])
-            },
-            'max_drawdown': {
-                'current': recent[-1].max_drawdown,
-                'max_observed': max([m.max_drawdown for m in recent])
-            }
-        }
+    def resolve_alert(self, alert_id: int):
+        """حل تنبيه"""
+        alert = self.db.query(AlertDB).filter(AlertDB.id == alert_id).first()
+        if alert:
+            alert.is_resolved = True
+            alert.resolved_at = datetime.utcnow()
+            self.db.commit()
+            logger.info(f"✅ تم حل التنبيه #{alert_id}")
