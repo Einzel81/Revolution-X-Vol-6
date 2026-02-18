@@ -2,6 +2,7 @@
 version: '3.8'
 
 services:
+  # ==================== Core Services ====================
   api:
     build:
       context: ./backend
@@ -15,6 +16,16 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${SECRET_KEY:-revolution-x-secret-key}
       - DEBUG=${DEBUG:-false}
+      # Telegram Configuration
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_WEBHOOK_URL=${TELEGRAM_WEBHOOK_URL:-https://your-domain.com/api/v1/webhooks/telegram}
+      - TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET}
+      # Email Configuration (Optional)
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM=${SMTP_FROM:-noreply@revolutionx.com}
     volumes:
       - ./backend:/app
     depends_on:
@@ -34,11 +45,13 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       - NEXT_PUBLIC_WS_URL=ws://localhost:8000
+      - NEXT_PUBLIC_TELEGRAM_BOT_NAME=${NEXT_PUBLIC_TELEGRAM_BOT_NAME:-RevolutionXBot}
     depends_on:
       - api
     networks:
       - revolution-x-network
 
+  # ==================== Database Services ====================
   postgres:
     image: timescale/timescaledb:latest-pg15
     container_name: revolution-x-db
@@ -49,6 +62,7 @@ services:
       - POSTGRES_DB=revolution_x
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
     ports:
       - "5432:5432"
     networks:
@@ -58,14 +72,170 @@ services:
     image: redis:7-alpine
     container_name: revolution-x-redis
     restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
     ports:
       - "6379:6379"
     networks:
       - revolution-x-network
 
+  # ==================== Stage 7: Telegram & Notifications ====================
+  
+  # Telegram Bot Webhook Handler
+  telegram-bot:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: revolution-x-telegram
+    restart: unless-stopped
+    command: >
+      sh -c "python -c 'from app.telegram.bot import telegram_bot; 
+             import asyncio; 
+             asyncio.run(telegram_bot.initialize())' && 
+             python -m app.telegram.webhook_server"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://user:pass@postgres:5432/revolution_x
+      - REDIS_URL=redis://redis:6379/0
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_WEBHOOK_URL=${TELEGRAM_WEBHOOK_URL}
+      - TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET}
+      - API_BASE_URL=http://api:8000
+    ports:
+      - "8001:8001"
+    depends_on:
+      - postgres
+      - redis
+      - api
+    networks:
+      - revolution-x-network
+    profiles:
+      - telegram
+      - all
+
+  # Celery Worker for Notifications Queue
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: revolution-x-celery-worker
+    restart: unless-stopped
+    command: celery -A app.services.notification_service.celery_app worker --loglevel=info --concurrency=4 --hostname=worker@%h
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://user:pass@postgres:5432/revolution_x
+      - REDIS_URL=redis://redis:6379/0
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - SECRET_KEY=${SECRET_KEY:-revolution-x-secret-key}
+      - PYTHONPATH=/app
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - postgres
+      - redis
+      - api
+    networks:
+      - revolution-x-network
+    deploy:
+      replicas: ${CELERY_WORKERS:-2}
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  # Celery Beat - Scheduler for periodic tasks
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: revolution-x-celery-beat
+    restart: unless-stopped
+    command: celery -A app.services.notification_service.celery_app beat --loglevel=info --scheduler redbeat.RedBeatScheduler
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://user:pass@postgres:5432/revolution_x
+      - REDIS_URL=redis://redis:6379/0
+      - REDBEAT_REDIS_URL=redis://redis:6379/1
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - PYTHONPATH=/app
+    volumes:
+      - ./backend:/app
+      - celery_beat_data:/var/lib/celery
+    depends_on:
+      - postgres
+      - redis
+      - celery-worker
+    networks:
+      - revolution-x-network
+
+  # Flower - Celery Monitoring Dashboard
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: revolution-x-flower
+    restart: unless-stopped
+    command: celery -A app.services.notification_service.celery_app flower --port=5555 --broker=redis://redis:6379/0 --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASS:-admin}
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - FLOWER_UNAUTHENTICATED_API=false
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+      - celery-worker
+    networks:
+      - revolution-x-network
+    profiles:
+      - monitoring
+      - all
+
+  # ==================== Optional Services ====================
+  
+  # Mailhog for email testing (development only)
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: revolution-x-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"  # SMTP port
+      - "8025:8025"  # Web UI
+    networks:
+      - revolution-x-network
+    profiles:
+      - dev
+      - all
+
+  # Nginx Reverse Proxy (Production)
+  nginx:
+    image: nginx:alpine
+    container_name: revolution-x-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/webhook.conf:/etc/nginx/conf.d/webhook.conf:ro
+    depends_on:
+      - api
+      - frontend
+    networks:
+      - revolution-x-network
+    profiles:
+      - production
+      - all
+
 volumes:
   postgres_data:
+  redis_data:
+  celery_beat_data:
 
 networks:
   revolution-x-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
