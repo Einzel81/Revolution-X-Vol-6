@@ -1,244 +1,263 @@
-// frontend/app/dashboard/page.tsx
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { 
   TrendingUp, 
+  TrendingDown, 
   DollarSign, 
   Activity, 
-  BarChart3,
-  AlertTriangle,
-  CheckCircle 
-} from 'lucide-react';
-import { api } from '@/lib/auth';
+  Target, 
+  Clock,
+  Plus,
+  RefreshCw,
+  AlertCircle
+} from "lucide-react";
+import { StatsGrid } from "@/components/dashboard/stats-grid";
+import { TradingChart } from "@/components/charts/trading-chart";
+import { PositionsTable } from "@/components/positions/positions-table";
+import { TradeHistory } from "@/components/history/trade-history";
+import { useWebSocket } from "@/hooks/useWebSocket";
+import { useTradingData } from "@/hooks/useTradingData";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface DashboardStats {
   balance: number;
-  equity: number;
-  daily_profit: number;
-  win_rate: number;
-  active_trades: number;
-  daily_loss: number;
+  totalPnL: number;
+  winRate: number;
+  activeTrades: number;
+  todayPnL: number;
+  totalTrades: number;
+}
+
+interface Activity {
+  id: string;
+  type: "trade_opened" | "trade_closed" | "alert" | "system";
+  message: string;
+  timestamp: string;
+  metadata?: Record<string, any>;
 }
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<DashboardStats>({
-    balance: 0,
-    equity: 0,
-    daily_profit: 0,
-    win_rate: 0,
-    active_trades: 0,
-    daily_loss: 0,
-  });
-  const [loading, setLoading] = useState(true);
+  const { isConnected, lastMessage } = useWebSocket();
+  const { stats, positions, history, isLoading } = useTradingData();
+  const [activities, setActivities] = useState<Activity[]>([]);
 
   useEffect(() => {
-    fetchStats();
-  }, []);
+    if (lastMessage) {
+      const data = JSON.parse(lastMessage);
+      if (data.type === "activity") {
+        setActivities(prev => [data.payload, ...prev].slice(0, 50));
+      }
+    }
+  }, [lastMessage]);
 
-  const fetchStats = async () => {
-    try {
-      const response = await api.get('/trading/balance');
-      setStats(response.data);
-    } catch (error) {
-      console.error('Failed to fetch stats:', error);
-    } finally {
-      setLoading(false);
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1
+      }
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-2 border-gold-500 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
+  const itemVariants = {
+    hidden: { y: 20, opacity: 0 },
+    visible: {
+      y: 0,
+      opacity: 1,
+      transition: {
+        type: "spring",
+        stiffness: 100
+      }
+    }
+  };
+
+  const getActivityIcon = (type: string) => {
+    switch (type) {
+      case "trade_opened":
+        return <Plus className="w-4 h-4 text-green-500" />;
+      case "trade_closed":
+        return <DollarSign className="w-4 h-4 text-blue-500" />;
+      case "alert":
+        return <AlertCircle className="w-4 h-4 text-yellow-500" />;
+      default:
+        return <Activity className="w-4 h-4 text-gray-500" />;
+    }
+  };
 
   return (
-    <div className="space-y-6">
+    <motion.div
+      className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6"
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
+    >
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-        <p className="text-slate-400">Welcome back to Revolution X</p>
-      </div>
+      <motion.div variants={itemVariants} className="mb-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-4xl font-bold text-white mb-2">
+              لوحة التحكم الرئيسية
+            </h1>
+            <p className="text-slate-400">
+              نظرة شاملة على أداء حسابك والفرص المتاحة
+            </p>
+          </div>
+          <div className="flex items-center gap-4">
+            <Badge 
+              variant={isConnected ? "default" : "destructive"}
+              className="px-4 py-2"
+            >
+              {isConnected ? "🟢 متصل بالخادم" : "🔴 غير متصل"}
+            </Badge>
+            <Button variant="outline" size="icon">
+              <RefreshCw className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      </motion.div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <StatCard
-          title="Account Balance"
-          value={`$${stats.balance.toLocaleString()}`}
-          change={`+$${stats.daily_profit.toFixed(2)} today`}
-          icon={DollarSign}
-          color="gold"
-          positive
-        />
-        <StatCard
-          title="Equity"
-          value={`$${stats.equity.toLocaleString()}`}
-          change="Real-time"
-          icon={Activity}
-          color="blue"
-        />
-        <StatCard
-          title="Daily P&L"
-          value={`${stats.daily_profit >= 0 ? '+' : ''}$${stats.daily_profit.toFixed(2)}`}
-          change={`${stats.daily_loss > 0 ? `-$${stats.daily_loss.toFixed(2)} loss` : 'No losses today'}`}
-          icon={TrendingUp}
-          color={stats.daily_profit >= 0 ? 'emerald' : 'rose'}
-          positive={stats.daily_profit >= 0}
-        />
-        <StatCard
-          title="Win Rate"
-          value={`${stats.win_rate}%`}
-          change="Last 30 days"
-          icon={BarChart3}
-          color="purple"
-        />
-        <StatCard
-          title="Active Trades"
-          value={stats.active_trades.toString()}
-          change="Currently open"
-          icon={Activity}
-          color="orange"
-        />
-        <StatCard
-          title="System Status"
-          value="Operational"
-          change="All systems normal"
-          icon={CheckCircle}
-          color="emerald"
-          positive
-        />
+      <motion.div variants={itemVariants}>
+        <StatsGrid stats={stats} isLoading={isLoading} />
+      </motion.div>
+
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
+        {/* Chart Section */}
+        <motion.div variants={itemVariants} className="lg:col-span-2">
+          <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-xl">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-white flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-blue-500" />
+                الرسم البياني المتقدم
+              </CardTitle>
+              <div className="flex gap-2">
+                <Badge variant="outline" className="text-xs">
+                  EUR/USD
+                </Badge>
+                <Badge variant="outline" className="text-xs">
+                  M15
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <TradingChart symbol="EURUSD" timeframe="15" />
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Activity Feed */}
+        <motion.div variants={itemVariants}>
+          <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-xl h-full">
+            <CardHeader>
+              <CardTitle className="text-white flex items-center gap-2">
+                <Clock className="w-5 h-5 text-purple-500" />
+                النشاط الأخير
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ScrollArea className="h-[400px] pr-4">
+                <div className="space-y-4">
+                  {activities.map((activity) => (
+                    <motion.div
+                      key={activity.id}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="flex items-start gap-3 p-3 rounded-lg bg-slate-700/30 border border-slate-600/30"
+                    >
+                      <div className="mt-1">
+                        {getActivityIcon(activity.type)}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm text-slate-200">
+                          {activity.message}
+                        </p>
+                        <p className="text-xs text-slate-400 mt-1">
+                          {new Date(activity.timestamp).toLocaleTimeString("ar-SA")}
+                        </p>
+                      </div>
+                    </motion.div>
+                  ))}
+                  {activities.length === 0 && (
+                    <div className="text-center text-slate-500 py-8">
+                      لا يوجد نشاط حديث
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+
+      {/* Positions & History */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+        <motion.div variants={itemVariants}>
+          <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-xl">
+            <CardHeader>
+              <CardTitle className="text-white flex items-center gap-2">
+                <Target className="w-5 h-5 text-green-500" />
+                المراكز المفتوحة
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <PositionsTable positions={positions} />
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div variants={itemVariants}>
+          <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-xl">
+            <CardHeader>
+              <CardTitle className="text-white flex items-center gap-2">
+                <Activity className="w-5 h-5 text-orange-500" />
+                سجل التداول
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <TradeHistory trades={history} />
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
 
       {/* Quick Actions */}
-      <div className="bg-revolution-card border border-revolution-border rounded-xl p-6">
-        <h2 className="text-lg font-semibold text-white mb-4">Quick Actions</h2>
-        <div className="flex flex-wrap gap-3">
-          <button className="px-4 py-2 bg-gold-500/20 text-gold-400 border border-gold-500/30 rounded-lg hover:bg-gold-500/30 transition-colors">
-            New Trade
-          </button>
-          <button className="px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors">
-            View Positions
-          </button>
-          <button className="px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors">
-            AI Scanner
-          </button>
-        </div>
-      </div>
-
-      {/* Recent Activity */}
-      <div className="bg-revolution-card border border-revolution-border rounded-xl p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">Recent Activity</h2>
-          <button className="text-gold-400 text-sm hover:text-gold-300">View All</button>
-        </div>
-        <div className="space-y-3">
-          <ActivityItem
-            type="trade"
-            title="New position opened"
-            description="BUY XAU/USD @ 2,945.50"
-            time="2 minutes ago"
-            positive
-          />
-          <ActivityItem
-            type="alert"
-            title="Take Profit reached"
-            description="XAG/USD +$45.20"
-            time="15 minutes ago"
-            positive
-          />
-          <ActivityItem
-            type="system"
-            title="AI Guardian update"
-            description="Strategy parameters optimized"
-            time="1 hour ago"
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Components
-function StatCard({ 
-  title, 
-  value, 
-  change, 
-  icon: Icon,
-  color,
-  positive 
-}: { 
-  title: string;
-  value: string;
-  change: string;
-  icon: any;
-  color: string;
-  positive?: boolean;
-}) {
-  const colorClasses: Record<string, string> = {
-    gold: 'from-gold-500/20 to-gold-600/20 text-gold-400',
-    emerald: 'from-emerald-500/20 to-emerald-600/20 text-emerald-400',
-    blue: 'from-blue-500/20 to-blue-600/20 text-blue-400',
-    purple: 'from-purple-500/20 to-purple-600/20 text-purple-400',
-    orange: 'from-orange-500/20 to-orange-600/20 text-orange-400',
-    rose: 'from-rose-500/20 to-rose-600/20 text-rose-400',
-  };
-
-  return (
-    <div className="bg-revolution-card border border-revolution-border rounded-xl p-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-slate-400 text-sm mb-1">{title}</p>
-          <h3 className="text-2xl font-bold text-white">{value}</h3>
-          <p className={`text-sm mt-1 ${positive ? 'text-emerald-400' : 'text-slate-400'}`}>
-            {change}
-          </p>
-        </div>
-        <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${colorClasses[color]} flex items-center justify-center`}>
-          <Icon className="w-5 h-5" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ActivityItem({ 
-  type, 
-  title, 
-  description, 
-  time,
-  positive 
-}: { 
-  type: 'trade' | 'alert' | 'system';
-  title: string;
-  description: string;
-  time: string;
-  positive?: boolean;
-}) {
-  const icons = {
-    trade: TrendingUp,
-    alert: AlertTriangle,
-    system: CheckCircle,
-  };
-
-  const Icon = icons[type];
-
-  return (
-    <div className="flex items-start space-x-3 p-3 bg-revolution-dark/50 rounded-lg">
-      <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-        type === 'trade' ? 'bg-gold-500/20 text-gold-400' :
-        type === 'alert' ? (positive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400') :
-        'bg-blue-500/20 text-blue-400'
-      }`}>
-        <Icon className="w-4 h-4" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-white font-medium text-sm">{title}</p>
-        <p className="text-slate-400 text-sm">{description}</p>
-      </div>
-      <span className="text-slate-500 text-xs flex-shrink-0">{time}</span>
-    </div>
+      <motion.div variants={itemVariants} className="mt-8">
+        <Card className="bg-gradient-to-r from-blue-600/20 to-purple-600/20 border-blue-500/30">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-white mb-2">
+                  إجراءات سريعة
+                </h3>
+                <p className="text-slate-300">
+                  الوصول السريع إلى أهم الأدوات والميزات
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <Button className="bg-green-600 hover:bg-green-700">
+                  <Plus className="w-4 h-4 ml-2" />
+                  صفقة جديدة
+                </Button>
+                <Button variant="outline">
+                  <Target className="w-4 h-4 ml-2" />
+                  الفرص المتاحة
+                </Button>
+                <Button variant="outline">
+                  <Activity className="w-4 h-4 ml-2" />
+                  التحليل الفني
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+    </motion.div>
   );
 }
