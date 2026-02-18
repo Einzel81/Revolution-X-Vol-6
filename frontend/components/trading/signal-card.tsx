@@ -121,4 +121,40 @@ export default function SignalCard({ signal, onExecute }: SignalCardProps) {
           <div className="text-white font-bold">${signal.entry_price?.toFixed(2)}</div>
         </div>
         <div className="bg-rose-500/10 rounded-lg p-3 text-center border border-rose-500/20">
-          <div className="text-rose-400 text-xs mb-1">
+          <div className="text-rose-400 text-xs mb-1">Stop Loss</div>
+          <div className="text-white font-bold">${signal.suggested_sl?.toFixed(2)}</div>
+        </div>
+        <div className="bg-emerald-500/10 rounded-lg p-3 text-center border border-emerald-500/20">
+          <div className="text-emerald-400 text-xs mb-1">Take Profit</div>
+          <div className="text-white font-bold">${signal.suggested_tp?.toFixed(2)}</div>
+        </div>
+      </div>
+
+      {/* Reasons */}
+      <div className="space-y-2 mb-4">
+        <p className="text-slate-400 text-sm">Analysis:</p>
+        {signal.reasons?.map((reason, idx) => (
+          <div key={idx} className="flex items-center space-x-2 text-sm text-slate-300">
+            <TrendingUp className="w-4 h-4 text-gold-400" />
+            <span>{reason}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Execute Button */}
+      {signal.action !== 'NEUTRAL' && (
+        <button
+          onClick={onExecute}
+          className={cn(
+            'w-full py-3 rounded-lg font-semibold transition-all',
+            signal.action.includes('BUY')
+              ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
+              : 'bg-rose-500 hover:bg-rose-600 text-white'
+          )}
+        >
+          Execute {signal.action.includes('BUY') ? 'Long' : 'Short'} Position
+        </button>
+      )}
+    </div>
+  );
+}
