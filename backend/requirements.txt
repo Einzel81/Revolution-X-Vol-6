@@ -20,3 +20,13 @@ prometheus-client==0.19.0
 pyotp==2.9.0
 qrcode==7.4.2
 pillow==10.2.0
+
+# AI/ML Dependencies - Phase 4
+tensorflow==2.15.0
+xgboost==2.0.3
+lightgbm==4.1.0
+scikit-learn==1.4.0
+pandas==2.2.0
+numpy==1.26.3
+joblib==1.3.2
+scipy==1.12.0
