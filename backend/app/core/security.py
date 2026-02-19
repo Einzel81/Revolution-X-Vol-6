@@ -15,7 +15,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
 
 from app.core.config import settings
-from app.core.logging import logger
+from app.core.logging import get_logger, audit_logger
 
 
 # Password hashing
@@ -261,3 +261,12 @@ COMMON_PASSWORDS = {
     'password', '123456', '12345678', 'qwerty', 'abc123',
     'monkey', 'letmein', 'dragon', '111111', 'baseball'
 }
+
+def verify_webhook_signature(payload: bytes, signature: str, secret: str) -> bool:
+    """Verify webhook signature."""
+    expected_signature = hmac.new(
+        secret.encode(),
+        payload,
+        hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(expected_signature, signature)

@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     
     # Security
     SECRET_KEY: str = "your-secret-key-here"
+    SECRET_SALT: str = "your-secret-salt-here"
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_WEBHOOK_SECRET: str = ""
+    TELEGRAM_WEBHOOK_URL: str = ""
+    REDIS_URL: str = "redis://redis:6379/0"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
     # CORS

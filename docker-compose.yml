@@ -137,13 +137,6 @@ services:
       - revolution-x-network
     deploy:
       replicas: ${CELERY_WORKERS:-2}
-      resources:
-        limits:
-          cpus: '1'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 128M
 
   # Celery Beat - Scheduler for periodic tasks
   celery-beat:

@@ -9,16 +9,16 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from backend.app.core.database import get_db
-from backend.app.core.auth import get_current_user, require_admin
-from backend.app.guardian.monitor import PerformanceMonitor
-from backend.app.guardian.analyzer import CodeAnalyzer
-from backend.app.guardian.fixer import AutoFixer
-from backend.app.guardian.models import (
+from app.database.connection import get_db
+from app.auth.dependencies import get_current_user, require_admin
+from app.guardian.monitor import PerformanceMonitor
+from app.guardian.analyzer import CodeAnalyzer
+from app.guardian.fixer import AutoFixer
+from app.guardian.models import (
     PerformanceMetric, Alert, CodeChange, GuardianState,
     GuardianStatus, ChangeStatus
 )
-from backend.app.guardian.knowledge_base import KnowledgeBase
+from app.guardian.knowledge_base import KnowledgeBase
 
 router = APIRouter(prefix="/guardian", tags=["guardian"])
 
@@ -87,7 +87,7 @@ async def get_metrics(
     current_user = Depends(get_current_user)
 ):
     """الحصول على المقاييس"""
-    from backend.app.guardian.models import PerformanceMetricDB
+    from app.guardian.models import PerformanceMetricDB
     
     metrics = db.query(PerformanceMetricDB).order_by(
         PerformanceMetricDB.timestamp.desc()
@@ -108,7 +108,7 @@ async def get_alerts(
     current_user = Depends(get_current_user)
 ):
     """الحصول على التنبيهات"""
-    from backend.app.guardian.models import AlertDB
+    from app.guardian.models import AlertDB
     
     query = db.query(AlertDB)
     
@@ -172,7 +172,7 @@ async def get_change_history(
     current_user = Depends(get_current_user)
 ):
     """سجل التغييرات"""
-    from backend.app.guardian.models import CodeChangeDB
+    from app.guardian.models import CodeChangeDB
     
     changes = db.query(CodeChangeDB).order_by(
         CodeChangeDB.created_at.desc()

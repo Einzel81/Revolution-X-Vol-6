@@ -9,11 +9,11 @@ from enum import Enum
 from celery import Celery
 from celery.exceptions import MaxRetriesExceededError
 
-from backend.app.core.config import settings
-from backend.app.core.database import get_db
-from backend.app.models.notification import Notification, NotificationType, NotificationPriority
-from backend.app.models.user import User
-from backend.app.telegram.bot import telegram_bot
+from app.core.config import settings
+from app.core.database import get_db
+from app.models.notification import Notification, NotificationType, NotificationPriority
+from app.models.user import User
+from app.telegram.bot import telegram_bot
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +258,7 @@ def send_telegram_notification(self, user_id: int, title: str, message: str, dat
             
             # Get user's Telegram chat ID
             async with get_db() as db:
-                from backend.app.models.telegram_user import TelegramUser
+                from app.models.telegram_user import TelegramUser
                 telegram_user = await db.query(TelegramUser).filter(
                     TelegramUser.user_id == user_id,
                     TelegramUser.is_active == True

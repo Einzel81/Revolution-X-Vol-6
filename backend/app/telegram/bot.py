@@ -17,11 +17,11 @@ import asyncio
 from datetime import datetime
 import os
 
-from backend.app.core.config import settings
-from backend.app.core.database import get_db
-from backend.app.models.user import User
-from backend.app.telegram.messages import MessageTemplates
-from backend.app.telegram.handlers import CommandHandlers, CallbackHandlers
+from app.core.config import settings
+from app.core.database import get_db
+from app.models.user import User
+from app.telegram.messages import MessageTemplates
+from app.telegram.handlers import CommandHandlers, CallbackHandlers
 
 logger = logging.getLogger(__name__)
 

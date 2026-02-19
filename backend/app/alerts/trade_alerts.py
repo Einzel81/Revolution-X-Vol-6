@@ -5,11 +5,11 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from backend.app.core.database import get_db
-from backend.app.models.trade import Trade
-from backend.app.models.user import User
-from backend.app.telegram.bot import telegram_bot
-from backend.app.services.notification_service import notification_service, NotificationPriority, NotificationChannel
+from app.core.database import get_db
+from app.models.trade import Trade
+from app.models.user import User
+from app.telegram.bot import telegram_bot
+from app.services.notification_service import notification_service, NotificationPriority, NotificationChannel
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class TradeAlertManager:
             
             # Get user's Telegram
             async with get_db() as db:
-                from backend.app.models.telegram_user import TelegramUser
+                from app.models.telegram_user import TelegramUser
                 telegram_user = await db.query(TelegramUser).filter(
                     TelegramUser.user_id == user_id,
                     TelegramUser.is_active == True
@@ -86,7 +86,7 @@ class TradeAlertManager:
             
             # Telegram notification
             async with get_db() as db:
-                from backend.app.models.telegram_user import TelegramUser
+                from app.models.telegram_user import TelegramUser
                 telegram_user = await db.query(TelegramUser).filter(
                     TelegramUser.user_id == user_id,
                     TelegramUser.is_active == True
@@ -133,14 +133,14 @@ class TradeAlertManager:
             }
             
             async with get_db() as db:
-                from backend.app.models.telegram_user import TelegramUser
+                from app.models.telegram_user import TelegramUser
                 telegram_user = await db.query(TelegramUser).filter(
                     TelegramUser.user_id == user_id,
                     TelegramUser.is_active == True
                 ).first()
                 
                 if telegram_user:
-                    from backend.app.telegram.messages import MessageTemplates
+                    from app.telegram.messages import MessageTemplates
                     message = MessageTemplates.partial_close(trade_data, closed_percent, realized_pnl)
                     await telegram_bot.send_message(
                         chat_id=telegram_user.chat_id,

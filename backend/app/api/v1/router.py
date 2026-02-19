@@ -1,13 +1,13 @@
-"""
-Main API Router - Phase 4 Updated
-"""
-
 from fastapi import APIRouter
 
 from .trading import router as trading_router
-from .ai import router as ai_router  # Add this
+from .ai import router as ai_router
+from .guardian import router as guardian_router
+from .webhooks import router as webhooks_router
 
-router = APIRouter()
+api_router = APIRouter()
 
-router.include_router(trading_router, prefix="/trading", tags=["Trading"])
-router.include_router(ai_router, prefix="/ai", tags=["AI System"])  # Add this
+api_router.include_router(trading_router, prefix="/trading", tags=["trading"])
+api_router.include_router(ai_router, prefix="/ai", tags=["ai"])
+api_router.include_router(guardian_router, prefix="/guardian", tags=["guardian"])
+api_router.include_router(webhooks_router, prefix="/webhooks", tags=["webhooks"])

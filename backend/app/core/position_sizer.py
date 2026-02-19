@@ -1,4 +1,3 @@
-# backend/app/core/position_sizer.py
 """
 Position Sizing Calculator
 - Fixed Risk
@@ -8,7 +7,7 @@ Position Sizing Calculator
 """
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Optional
 import numpy as np
 
 @dataclass
@@ -35,7 +34,7 @@ class PositionSizer:
         # Contract specs for XAU/USD
         self.pip_value = 1.0  # $1 per pip for 0.01 lot (1 unit)
         self.lot_size = 100   # 1 lot = 100 units
-        
+    
     def calculate(
         self,
         balance: float,

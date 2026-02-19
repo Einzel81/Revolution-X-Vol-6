@@ -5,9 +5,9 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from backend.app.core.database import get_db
-from backend.app.telegram.bot import telegram_bot
-from backend.app.services.notification_service import notification_service, NotificationPriority, NotificationChannel
+from app.core.database import get_db
+from app.telegram.bot import telegram_bot
+from app.services.notification_service import notification_service, NotificationPriority, NotificationChannel
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class GuardianAlertManager:
             """
             
             async with get_db() as db:
-                from backend.app.models.telegram_user import TelegramUser
+                from app.models.telegram_user import TelegramUser
                 telegram_user = await db.query(TelegramUser).filter(
                     TelegramUser.user_id == user_id,
                     TelegramUser.is_active == True
@@ -89,7 +89,7 @@ class GuardianAlertManager:
             """
             
             async with get_db() as db:
-                from backend.app.models.telegram_user import TelegramUser
+                from app.models.telegram_user import TelegramUser
                 telegram_user = await db.query(TelegramUser).filter(
                     TelegramUser.user_id == user_id,
                     TelegramUser.is_active == True
@@ -143,7 +143,7 @@ class GuardianAlertManager:
             """
             
             async with get_db() as db:
-                from backend.app.models.telegram_user import TelegramUser
+                from app.models.telegram_user import TelegramUser
                 telegram_user = await db.query(TelegramUser).filter(
                     TelegramUser.user_id == user_id,
                     TelegramUser.is_active == True
@@ -197,7 +197,7 @@ class GuardianAlertManager:
             """
             
             async with get_db() as db:
-                from backend.app.models.telegram_user import TelegramUser
+                from app.models.telegram_user import TelegramUser
                 telegram_user = await db.query(TelegramUser).filter(
                     TelegramUser.user_id == user_id,
                     TelegramUser.is_active == True
@@ -243,7 +243,7 @@ class GuardianAlertManager:
             """
             
             async with get_db() as db:
-                from backend.app.models.telegram_user import TelegramUser
+                from app.models.telegram_user import TelegramUser
                 telegram_user = await db.query(TelegramUser).filter(
                     TelegramUser.user_id == user_id,
                     TelegramUser.is_active == True

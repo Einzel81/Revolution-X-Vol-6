@@ -6,12 +6,12 @@ from typing import Dict, Any
 from fastapi import APIRouter, Request, HTTPException, Depends, BackgroundTasks
 from fastapi.responses import JSONResponse
 
-from backend.app.core.config import settings
-from backend.app.core.security import verify_webhook_signature
-from backend.app.telegram.bot import telegram_bot
-from backend.app.services.notification_service import notification_service
-from backend.app.alerts.trade_alerts import trade_alert_manager
-from backend.app.alerts.risk_alerts import risk_alert_manager
+from app.core.config import settings
+from app.core.security import verify_webhook_signature
+from app.telegram.bot import telegram_bot
+from app.services.notification_service import notification_service
+from app.alerts.trade_alerts import trade_alert_manager
+from app.alerts.risk_alerts import risk_alert_manager
 
 logger = logging.getLogger(__name__)
 

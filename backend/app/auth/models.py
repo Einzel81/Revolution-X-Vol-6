@@ -1,8 +1,8 @@
-# backend/app/auth/models.py
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text, Enum
 from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.orm import declared_attr
 import enum
 
 from app.database.connection import Base
@@ -15,7 +15,7 @@ class UserRole(str, enum.Enum):
 
 class User(Base):
     __tablename__ = "users"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
@@ -29,14 +29,14 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    metadata = Column(JSONB, default=dict)
-    
+    user_metadata = Column("metadata", JSONB, default=dict)  # تم تغيير الاسم لتجنب التعارض
+
     def __repr__(self):
-        return f"<User {self.email} ({self.role})>"
+        return f"<User {self.email}>"
 
 class Session(Base):
     __tablename__ = "sessions"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     token = Column(Text, nullable=False)
@@ -48,7 +48,7 @@ class Session(Base):
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     action = Column(String(100), nullable=False)

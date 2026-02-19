@@ -7,12 +7,12 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
-from backend.app.core.database import get_db
-from backend.app.models.user import User
-from backend.app.models.telegram_user import TelegramUser
-from backend.app.services.trading_service import TradingService
-from backend.app.services.user_service import UserService
-from backend.app.telegram.messages import MessageTemplates
+from app.core.database import get_db
+from app.models.user import User
+from app.models.telegram_user import TelegramUser
+from app.services.trading_service import TradingService
+from app.services.user_service import UserService
+from app.telegram.messages import MessageTemplates
 
 logger = logging.getLogger(__name__)
 

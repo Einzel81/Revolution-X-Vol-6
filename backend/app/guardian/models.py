@@ -52,7 +52,7 @@ class PerformanceMetricDB(Base):
     latency_ms = Column(Float)
     total_trades = Column(Integer)
     successful_trades = Column(Integer)
-    metadata = Column(JSON)
+    metric_metadata = Column("metadata", JSON)
 
 class AlertDB(Base):
     __tablename__ = "guardian_alerts"

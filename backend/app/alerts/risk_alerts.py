@@ -5,11 +5,11 @@ import logging
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
 
-from backend.app.core.database import get_db
-from backend.app.models.user import User
-from backend.app.telegram.bot import telegram_bot
-from backend.app.services.notification_service import notification_service, NotificationPriority, NotificationChannel
-from backend.app.services.alert_manager import alert_manager, AlertTrigger, AlertType
+from app.core.database import get_db
+from app.models.user import User
+from app.telegram.bot import telegram_bot
+from app.services.notification_service import notification_service, NotificationPriority, NotificationChannel
+from app.services.alert_manager import alert_manager, AlertTrigger, AlertType
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ class RiskAlertManager:
         
         # Send via Telegram
         async with get_db() as db:
-            from backend.app.models.telegram_user import TelegramUser
+            from app.models.telegram_user import TelegramUser
             telegram_user = await db.query(TelegramUser).filter(
                 TelegramUser.user_id == user_id,
                 TelegramUser.is_active == True
@@ -118,7 +118,7 @@ class RiskAlertManager:
         """
         
         async with get_db() as db:
-            from backend.app.models.telegram_user import TelegramUser
+            from app.models.telegram_user import TelegramUser
             telegram_user = await db.query(TelegramUser).filter(
                 TelegramUser.user_id == user_id,
                 TelegramUser.is_active == True
@@ -180,7 +180,7 @@ class RiskAlertManager:
         """
         
         async with get_db() as db:
-            from backend.app.models.telegram_user import TelegramUser
+            from app.models.telegram_user import TelegramUser
             telegram_user = await db.query(TelegramUser).filter(
                 TelegramUser.user_id == user_id,
                 TelegramUser.is_active == True
@@ -250,7 +250,7 @@ class RiskAlertManager:
             title = "🎯 Daily Profit Target Reached"
         
         async with get_db() as db:
-            from backend.app.models.telegram_user import TelegramUser
+            from app.models.telegram_user import TelegramUser
             telegram_user = await db.query(TelegramUser).filter(
                 TelegramUser.user_id == user_id,
                 TelegramUser.is_active == True
@@ -301,7 +301,7 @@ class RiskAlertManager:
         """
         
         async with get_db() as db:
-            from backend.app.models.telegram_user import TelegramUser
+            from app.models.telegram_user import TelegramUser
             telegram_user = await db.query(TelegramUser).filter(
                 TelegramUser.user_id == user_id,
                 TelegramUser.is_active == True

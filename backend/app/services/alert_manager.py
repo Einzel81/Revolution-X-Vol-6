@@ -7,11 +7,11 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from enum import Enum
 
-from backend.app.core.database import get_db
-from backend.app.models.alert import Alert, AlertType, AlertCondition
-from backend.app.models.user import User
-from backend.app.services.notification_service import notification_service, NotificationPriority
-from backend.app.telegram.bot import telegram_bot
+from app.core.database import get_db
+from app.models.alert import Alert, AlertType, AlertCondition
+from app.models.user import User
+from app.services.notification_service import notification_service, NotificationPriority
+from app.telegram.bot import telegram_bot
 
 logger = logging.getLogger(__name__)
 
